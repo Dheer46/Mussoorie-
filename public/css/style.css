@@ -123,15 +123,90 @@ input[type=checkbox], input[type=range] { accent-color: var(--accent); }
 #load-msg { color: var(--muted); font-size: 13px; margin-top: 14px; min-height: 1.4em; }
 #loader.error #load-msg { color: #ff8a7a; }
 
+.sheet-handle { display: none; }
+#view canvas { touch-action: none; }
+
+/* ---------------------------------------------------------- phones (portrait) */
 @media (max-width: 760px) {
-  #title { top: 10px; left: 10px; right: 10px; }
+  :root { --inset-t: env(safe-area-inset-top, 0px); --inset-b: env(safe-area-inset-bottom, 0px); }
+  html, body { height: 100%; }
+  #title { top: calc(8px + var(--inset-t)); left: 8px; right: auto; padding: 5px 12px 5px 5px; gap: 8px; border-radius: 10px; }
+  #title h1 { font-size: 15px; }
   #title p { display: none; }
-  #sidebar { top: 66px; left: 10px; bottom: 120px; width: calc(100% - 20px); }
-  #info { top: auto; bottom: 120px; right: 10px; left: 10px; width: auto; max-height: 45%; transform: translateY(120%); }
-  #timebar { flex-wrap: wrap; justify-content: center; bottom: 10px; white-space: normal; width: calc(100% - 20px); }
-  #time { width: 100%; order: 10; }
-  #sun-label, #credits { display: none; }
-  #readout { display: none; }
-  #nav { bottom: 130px; right: 10px; }
-  #scale { bottom: 130px; left: 10px; }
+  #sidebar-toggle { width: 32px; height: 32px; }
+
+  /* Landmarks + layers become a bottom sheet. */
+  #sidebar {
+    top: auto; left: 0; right: 0; bottom: 0; width: auto; height: min(64dvh, 560px);
+    border-radius: 18px 18px 0 0; border-bottom: 0; padding: 6px 14px calc(12px + var(--inset-b)); z-index: 8;
+  }
+  .sidebar-hidden #sidebar { transform: translateY(105%); opacity: 1; }
+  .sheet-handle { display: block; width: 100%; height: 22px; border: 0; background: none; padding: 0; flex: none; position: relative; }
+  .sheet-handle::after { content: ""; position: absolute; left: 50%; top: 8px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: rgba(255, 255, 255, 0.3); }
+  #lm-search { font-size: 16px; } /* 16px stops iOS zooming into the field */
+  #lm-list li { padding: 9px 10px; }
+  .layers { gap: 8px 10px; font-size: 14px; }
+  .layers input[type=checkbox] { width: 18px; height: 18px; }
+  .layers label small { display: none; }
+  .layers input[type=range] { width: 60%; }
+
+  /* Landmark details become a bottom sheet over the time bar. */
+  #info {
+    top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 58dvh;
+    border-radius: 18px 18px 0 0; border-bottom: 0; padding: 4px 18px calc(16px + var(--inset-b)); z-index: 9;
+    transform: translateY(105%);
+  }
+  #info.open { transform: none; }
+  #info .sheet-handle { margin: 0 auto 2px; }
+  #info h2 { font-size: 21px; margin-bottom: 8px; }
+  #info-text { font-size: 14.5px; }
+  #info-close { top: 12px; right: 12px; width: 34px; height: 34px; }
+
+  /* One compact row: play, slider, time, now. The date picker stays on larger screens. */
+  #timebar {
+    left: 8px; right: 8px; bottom: calc(8px + var(--inset-b)); transform: none; width: auto; max-width: none;
+    padding: 6px 8px; gap: 8px; white-space: nowrap;
+  }
+  #time { width: auto; flex: 1; min-width: 0; order: 0; }
+  #time-label { min-width: 0; font-size: 12px; order: 1; }
+  #time-now { order: 2; }
+  #date, #sun-label { display: none; }
+  #timebar button { min-width: 40px; min-height: 36px; }
+
+  #nav { right: 8px; bottom: calc(64px + var(--inset-b)); }
+  #nav button { width: 42px; height: 42px; }
+  #scale { left: 8px; bottom: calc(64px + var(--inset-b)); padding: 4px 8px; font-size: 10px; }
+  #readout, #credits { display: none; }
+  #toast { top: calc(56px + var(--inset-t)); font-size: 12.5px; padding: 8px 12px; width: calc(100% - 16px); text-align: center; }
+  .info-open #nav, .info-open #scale { opacity: 0; pointer-events: none; }
+
+  .lm-card { font-size: 11px; padding: 3px 8px 3px 5px; gap: 5px; }
+  .lm-dot { width: 7px; height: 7px; box-shadow: 0 0 0 2px rgba(242, 165, 65, 0.28); }
+  .lm-stem { height: 20px; }
+  .lm.minor .lm-card { font-size: 10px; }
+  .lm.minor .lm-stem { height: 12px; }
+  .area-label { font-size: 9.5px; letter-spacing: 0.16em; }
+  .peak-label { font-size: 10.5px; }
+  .peak-label small { font-size: 9.5px; }
+  .ld-inner h1 { font-size: 22px; }
+}
+
+/* ---------------------------------------------------------- phones (landscape) */
+@media (max-height: 500px) and (min-width: 761px) {
+  #title { top: 8px; left: calc(8px + env(safe-area-inset-left, 0px)); padding: 5px 12px 5px 5px; }
+  #title h1 { font-size: 15px; }
+  #title p { display: none; }
+  #sidebar { top: 56px; left: calc(8px + env(safe-area-inset-left, 0px)); bottom: 8px; width: 240px; padding: 8px; }
+  #info { top: 8px; right: calc(8px + env(safe-area-inset-right, 0px)); width: 300px; max-height: calc(100% - 16px); padding: 12px 16px; }
+  #info h2 { font-size: 19px; }
+  #timebar { bottom: 8px; padding: 5px 10px; }
+  #time { width: 180px; }
+  #sun-label, #readout, #credits { display: none; }
+  #nav { bottom: 8px; right: calc(8px + env(safe-area-inset-right, 0px)); flex-direction: row; }
+  #scale { bottom: 8px; left: auto; right: calc(120px + env(safe-area-inset-right, 0px)); }
+  .info-open #nav, .info-open #scale { opacity: 0; pointer-events: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #sidebar, #info, #toast, #loader, .lm, .lm-card { transition: none; }
 }

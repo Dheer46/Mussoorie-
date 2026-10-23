@@ -13,10 +13,14 @@ import { HdImagery } from './hdimagery.js';
 const $ = (s) => document.querySelector(s);
 const DATA = 'data/';
 const QUALITY = {
-  low: { dpr: 1, shadow: 2048, trees: 30000, treeShadows: false },
-  high: { dpr: 1.5, shadow: 4096, trees: 90000, treeShadows: true },
-  ultra: { dpr: 2, shadow: 4096, trees: 140000, treeShadows: true },
+  low: { dpr: 1.25, shadow: 2048, trees: 20000, treeShadows: false, terrainShadow: false },
+  high: { dpr: 1.5, shadow: 4096, trees: 90000, treeShadows: true, terrainShadow: true },
+  ultra: { dpr: 2, shadow: 4096, trees: 140000, treeShadows: true, terrainShadow: true },
 };
+const IS_TOUCH = matchMedia('(pointer: coarse)').matches;
+// Phones get the Low preset by default; it skips terrain self-shadowing and tree shadows.
+const IS_PHONE = IS_TOUCH && Math.min(screen.width, screen.height) < 820;
+if (IS_PHONE) document.body.classList.add('phone');
 
 // ------------------------------------------------------------------ loading
 const progress = (pct, msg) => {
@@ -43,11 +47,13 @@ async function loadImage(name) {
   return img;
 }
 
-function pixels(img) {
+// Read an image's pixels, downscaled to at most maxW wide to keep memory low on phones.
+function pixels(img, maxW = 4096) {
   const c = document.createElement('canvas');
-  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const k = Math.min(1, maxW / img.naturalWidth);
+  c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
   const ctx = c.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(img, 0, 0);
+  ctx.drawImage(img, 0, 0, c.width, c.height);
   return ctx.getImageData(0, 0, c.width, c.height);
 }
 
@@ -66,9 +72,10 @@ async function main() {
   ]);
 
   // ---------------------------------------------------------------- renderer
-  let quality = 'high';
-  try { quality = localStorage.getItem('quality') || 'high'; } catch { /* storage unavailable */ }
-  if (!QUALITY[quality]) quality = 'high';
+  const defaultQuality = IS_PHONE ? 'low' : 'high';
+  let quality = defaultQuality;
+  try { quality = localStorage.getItem('quality') || defaultQuality; } catch { /* storage unavailable */ }
+  if (!QUALITY[quality]) quality = defaultQuality;
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, QUALITY[quality].dpr));
   renderer.setSize(innerWidth, innerHeight);
@@ -85,6 +92,14 @@ async function main() {
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0xffffff, 0); // enables USE_FOG; the actual model is in atmosphere.js
   const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 5, 600000);
+  // Widen the vertical field of view in portrait so the view isn't a narrow slit.
+  const fitCamera = () => {
+    const a = innerWidth / innerHeight;
+    camera.aspect = a;
+    camera.fov = a >= 1 ? 38 : THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(17)) / a)), 38, 60);
+    camera.updateProjectionMatrix();
+  };
+  fitCamera();
 
   const aniso = renderer.capabilities.getMaxAnisotropy();
   const tex = (img) => {
@@ -100,7 +115,7 @@ async function main() {
   const terrain = buildTerrain(geo, { near: tex(satImg), far: tex(farImg) }, scene);
 
   progress(55, `Extruding ${new Uint32Array(bldBuf, 0, 1)[0].toLocaleString()} buildings…`); await nextFrame();
-  const satPx = pixels(satImg);
+  const satPx = pixels(satImg, 2048);
   const buildings = buildBuildings(geo, parseBuildings(bldBuf), satPx, scene);
 
   progress(75, 'Draping roads, streams and Mussoorie Lake…'); await nextFrame();
@@ -115,9 +130,16 @@ async function main() {
 
   progress(85, 'Planting deodar, chir pine, oak and sal forests…'); await nextFrame();
   const forest = new Forest(geo, pixels(forestImg), scene, QUALITY.ultra.trees);
-  forest.budget = QUALITY[quality].trees;
-  const setTreeShadows = (v) => forest.meshes.forEach((m) => { m.castShadow = v; });
-  setTreeShadows(QUALITY[quality].treeShadows);
+  const applyQuality = () => {
+    const q = QUALITY[quality];
+    renderer.setPixelRatio(Math.min(devicePixelRatio, q.dpr));
+    atmos.sun.shadow.mapSize.setScalar(q.shadow);
+    if (atmos.sun.shadow.map) { atmos.sun.shadow.map.dispose(); atmos.sun.shadow.map = null; }
+    terrain.near.castShadow = q.terrainShadow;
+    forest.budget = q.trees;
+    forest.meshes.forEach((m) => { m.castShadow = q.treeShadows; });
+  };
+  applyQuality();
 
   progress(92, 'Sky, sun and clouds…'); await nextFrame();
   const clouds = new Clouds(scene);
@@ -140,7 +162,7 @@ async function main() {
   controls.keyPanSpeed = 25;
 
   const home = geo.toLocal(78.0745, 30.4575);
-  const HOME = { target: new THREE.Vector3(home.x, geo.height(home.x, home.z), home.z), dist: 9500, polar: 51, azim: -22 };
+  const HOME = { target: new THREE.Vector3(home.x, geo.height(home.x, home.z), home.z), dist: innerWidth < innerHeight ? 11000 : 9500, polar: innerWidth < innerHeight ? 40 : 51, azim: -22 };
   const placeCamera = (target, dist, polarDeg, azimDeg) => {
     const s = new THREE.Spherical(dist, THREE.MathUtils.degToRad(polarDeg), THREE.MathUtils.degToRad(azimDeg));
     camera.position.copy(target).add(new THREE.Vector3().setFromSpherical(s));
@@ -189,6 +211,8 @@ async function main() {
     $('#info-elev').textContent = `${Math.round(lm.elev).toLocaleString('en-IN')} m`;
     $('#info-coord').textContent = formatLatLon(lm.lat, lm.lon);
     panel.classList.add('open');
+    document.body.classList.add('info-open');
+    if (innerWidth < 760) document.body.classList.add('sidebar-hidden');
     document.querySelectorAll('#lm-list li').forEach((li) => li.classList.toggle('active', li.dataset.id === lm.id));
     if (fly) {
       let target = lm.pos.clone();
@@ -204,6 +228,7 @@ async function main() {
   const layer = new LandmarkLayer(geo, scene, select);
   $('#info-close').onclick = () => {
     panel.classList.remove('open'); layer.setActive(null);
+    document.body.classList.remove('info-open');
     if (highlight) { scene.remove(highlight); highlight = null; }
     history.replaceState(null, '', location.pathname);
   };
@@ -220,7 +245,12 @@ async function main() {
     const q = e.target.value.toLowerCase();
     list.querySelectorAll('li').forEach((li) => { li.style.display = li.textContent.toLowerCase().includes(q) ? '' : 'none'; });
   };
-  $('#sidebar-toggle').onclick = () => document.body.classList.toggle('sidebar-hidden');
+  $('#sidebar-toggle').onclick = () => {
+    document.body.classList.toggle('sidebar-hidden');
+    // On phones the list and the info card are both bottom sheets; show one at a time.
+    if (innerWidth < 760 && !document.body.classList.contains('sidebar-hidden')) $('#info-close').onclick?.();
+  };
+  $('#sheet-close').onclick = () => document.body.classList.add('sidebar-hidden');
   if (innerWidth < 760) document.body.classList.add('sidebar-hidden');
 
   // Time of day (IST) and date.
@@ -262,15 +292,14 @@ async function main() {
   bindToggle('#t-water', (v) => { waterGroup.visible = v; falls.visible = v; });
   bindToggle('#t-hd', (v) => hd.setEnabled(v));
   $('#quality').value = quality;
-  $('#quality').onchange = (e) => {
-    quality = e.target.value;
-    try { localStorage.setItem('quality', quality); } catch { /* storage unavailable */ }
-    const q = QUALITY[quality];
-    renderer.setPixelRatio(Math.min(devicePixelRatio, q.dpr));
-    atmos.sun.shadow.mapSize.setScalar(q.shadow);
-    if (atmos.sun.shadow.map) { atmos.sun.shadow.map.dispose(); atmos.sun.shadow.map = null; }
-    forest.budget = q.trees; setTreeShadows(q.treeShadows);
+  const setQuality = (q) => {
+    quality = q; $('#quality').value = q;
+    applyQuality();
     forest.update(controls.target, camera.position.distanceTo(controls.target), true);
+  };
+  $('#quality').onchange = (e) => {
+    setQuality(e.target.value);
+    try { localStorage.setItem('quality', quality); } catch { /* storage unavailable */ }
   };
   $('#reset').onclick = () => flyTo(HOME.target, HOME.dist, HOME.polar, HOME.azim, 3);
   $('#compass').onclick = () => flyTo(controls.target, camera.position.distanceTo(controls.target), THREE.MathUtils.radToDeg(new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target)).phi), 0, 1.4);
@@ -315,22 +344,35 @@ async function main() {
   });
   let downAt = null;
   renderer.domElement.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
-  renderer.domElement.addEventListener('dblclick', (e) => {
-    const p = pickGround(e.clientX, e.clientY);
+  const zoomInAt = (x, y) => {
+    const p = pickGround(x, y);
     if (p) flyTo(p, Math.max(camera.position.distanceTo(controls.target) * 0.45, 400), undefined, undefined, 1.4);
-  });
-  renderer.domElement.addEventListener('pointerup', (e) => {
-    if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;
-    const p = pickGround(e.clientX, e.clientY);
+  };
+  const describeAt = (x, y) => {
+    const p = pickGround(x, y);
     if (!p) return;
     const { lon, lat } = geo.toLonLat(p.x, p.z);
     let near = null, nd = Infinity;
     for (const lm of LANDMARKS) { const d = lm.pos.distanceTo(p); if (d < nd) { nd = d; near = lm; } }
     toast(`${formatLatLon(lat, lon)} · ${Math.round(geo.elevation(p.x, p.z))} m above sea level · ${(nd / 1000).toFixed(1)} km from ${near.name}`);
+  };
+  renderer.domElement.addEventListener('dblclick', (e) => { if (e.pointerType !== 'touch') zoomInAt(e.clientX, e.clientY); });
+  let lastTap = null, tapTimer = 0;
+  renderer.domElement.addEventListener('pointerup', (e) => {
+    if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > (e.pointerType === 'touch' ? 10 : 4)) return;
+    if (e.pointerType !== 'touch') { describeAt(e.clientX, e.clientY); return; }
+    // Touch: double-tap flies in; a single tap (once no second tap follows) describes the spot.
+    const now = performance.now();
+    if (lastTap && now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40) {
+      clearTimeout(tapTimer); lastTap = null; zoomInAt(e.clientX, e.clientY); return;
+    }
+    lastTap = { t: now, x: e.clientX, y: e.clientY };
+    const { clientX, clientY } = e;
+    tapTimer = setTimeout(() => describeAt(clientX, clientY), 330);
   });
 
   addEventListener('resize', () => {
-    camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+    fitCamera();
     renderer.setSize(innerWidth, innerHeight); labels.setSize(innerWidth, innerHeight);
   });
 
@@ -339,6 +381,8 @@ async function main() {
   const timer = new THREE.Timer();
   timer.connect(document);
   let labelAt = 0, hdAt = 0;
+  // If the device can't keep up, step down to Low once rather than stutter.
+  const perf = { frames: 0, t0: performance.now() + 6000, slow: 0, done: quality === 'low' };
   const startHash = location.hash.slice(1);
   const startLm = LANDMARKS.find((l) => l.id === startHash);
   if (startLm) { select(startLm, false); flyTo(startLm.pos, startLm.dist || 1800, 50, -22, 4.5); }
@@ -369,7 +413,20 @@ async function main() {
     clouds.update(dt, controls.target);
     forest.update(controls.target, camDist);
     if (performance.now() - hdAt > 250) { hdAt = performance.now(); hd.update(controls.target, camDist); }
-    if (performance.now() - labelAt > 200) { labelAt = performance.now(); layer.updateVisibility(camera, camDist); }
+    if (performance.now() - labelAt > 200) { labelAt = performance.now(); layer.updateVisibility(camera, camDist, innerWidth, innerHeight); }
+    if (document.hidden || flight) { perf.frames = 0; perf.t0 = performance.now() + 1000; }
+    else if (!perf.done && performance.now() > perf.t0) {
+      perf.frames++;
+      const el = performance.now() - perf.t0;
+      if (el > 3000) {
+        perf.slow = perf.frames / (el / 1000) < 24 ? perf.slow + 1 : 0;
+        perf.frames = 0; perf.t0 = performance.now();
+        if (perf.slow >= 2) {
+          perf.done = true; setQuality('low');
+          toast('Switched to Low quality to keep the map smooth on this device. Change it under Layers.');
+        }
+      }
+    }
 
     const az = new THREE.Spherical().setFromVector3(tmp.copy(camera.position).sub(controls.target)).theta;
     $('#compass-needle').style.transform = `rotate(${THREE.MathUtils.radToDeg(az)}deg)`;
@@ -384,6 +441,7 @@ async function main() {
 
   window.__mussoorie = { THREE, scene, camera, controls, geo, select, flyTo, atmos, clouds, forest, hd, renderer };
   $('#loader').classList.add('done');
+  if (IS_TOUCH) setTimeout(() => toast('Drag to pan · two fingers to zoom, rotate and tilt · double-tap to fly in · tap a label for details'), 5000);
   $('#stats').textContent = `${buildings.count.toLocaleString('en-IN')} buildings · ${roads.length.toLocaleString('en-IN')} road segments`;
 }
 

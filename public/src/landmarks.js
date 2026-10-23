@@ -6,15 +6,15 @@ import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
 export const LANDMARKS = [
   {
-    id: 'mall-road', name: 'Mall Road', cat: 'Promenade', lat: 30.4573, lon: 78.0735, roads: ['Mall Road'], dist: 2200,
+    id: 'mall-road', top: true, name: 'Mall Road', cat: 'Promenade', lat: 30.4573, lon: 78.0735, roads: ['Mall Road'], dist: 2200,
     text: 'The 2 km ridge-top promenade between Library Chowk (Gandhi Chowk) in the west and Picture Palace / Kulri in the east. Laid out in the 19th century, it is lined with shops, cafés, hotels and the lower station of the Gun Hill ropeway. Vehicle access is restricted for much of the day.',
   },
   {
-    id: 'gun-hill', name: 'Gun Hill', cat: 'Viewpoint', lat: 30.4597, lon: 78.0739, dist: 1300,
+    id: 'gun-hill', top: true, name: 'Gun Hill', cat: 'Viewpoint', lat: 30.4597, lon: 78.0739, dist: 1300,
     text: 'The second-highest summit in Mussoorie, rising directly above Mall Road. Its name comes from a cannon that was fired here every day at noon in the colonial era so residents could set their watches. A ropeway climbs about 400 m from Mall Road to the top.',
   },
   {
-    id: 'landour', name: 'Landour', cat: 'Cantonment town', lat: 30.4610, lon: 78.0951, dist: 2400,
+    id: 'landour', top: true, name: 'Landour', cat: 'Cantonment town', lat: 30.4610, lon: 78.0951, dist: 2400,
     text: 'The small cantonment town above Mussoorie, founded in 1827 as a sanatorium for British soldiers. Its quiet deodar-shaded lanes include Char Dukan, Sisters Bazaar, Kellogg Church (home of the Landour Language School) and the Landour clock tower, and it is the long-time home of the writer Ruskin Bond.',
   },
   {
@@ -22,11 +22,11 @@ export const LANDMARKS = [
     text: 'The highest point of Landour, and of Mussoorie. On clear days the telescopes at the viewpoint look north across the Aglar valley to the snow peaks of the Greater Himalaya, including Bandarpunch, the Kedarnath group and the Gangotri group.',
   },
   {
-    id: 'company-garden', name: 'Company Garden', cat: 'Garden', lat: 30.4609, lon: 78.0520, dist: 1200,
+    id: 'company-garden', top: true, name: 'Company Garden', cat: 'Garden', lat: 30.4609, lon: 78.0520, dist: 1200,
     text: 'A 19th-century botanical garden from the East India Company era, now a municipal park with flower beds, a small artificial lake and a waterfall. It lies just north of Happy Valley on the road to Kempty Falls.',
   },
   {
-    id: 'kempty-falls', name: 'Kempty Falls', cat: 'Waterfall', lat: 30.4880, lon: 78.0367, dist: 1400, fall: true,
+    id: 'kempty-falls', top: true, name: 'Kempty Falls', cat: 'Waterfall', lat: 30.4880, lon: 78.0367, dist: 1400, fall: true,
     text: 'A cascade in the Ringali Gad gorge on the Mussoorie–Chakrata road, about 13 km by road north-west of Mussoorie. The name is popularly said to come from "camp tea", the picnics British officers held here. It was developed as a resort after 1835.',
   },
   {
@@ -38,7 +38,7 @@ export const LANDMARKS = [
     text: 'A roughly 3 km road that loops around the north side of Gun Hill from Library to Kulri. It is named after a rock outcrop shaped like a camel\'s hump, and the old British cemetery lies along it. It is a favourite walk at sunset.',
   },
   {
-    id: 'library', name: 'Library Bazaar', cat: 'Market', lat: 30.4598, lon: 78.0644, dist: 1000,
+    id: 'library', top: true, name: 'Library Bazaar', cat: 'Market', lat: 30.4598, lon: 78.0644, dist: 1000,
     text: 'The western end of Mall Road at Gandhi Chowk, named after the Mussoorie Library of 1843. It is a busy junction of shops and hotels, with the bus stand, Spring Road and the roads to Happy Valley and Kempty.',
   },
   {
@@ -150,14 +150,19 @@ export class LandmarkLayer {
     return new THREE.Vector3(best.x, g.height(best.x, best.z) + 20, best.z);
   }
 
-  // Hide labels that are behind a ridge (ray-marched against the heightmap) or too far.
-  updateVisibility(camera, camDist) {
+  // Hide labels that are behind a ridge (ray-marched against the heightmap), too far,
+  // or that would overlap a more important label on screen.
+  updateVisibility(camera, camDist, w, h) {
     const cam = camera.position, g = this.geo;
+    const small = w < 760;
+    const placed = [];
+    const cand = [];
+    const v = new THREE.Vector3();
     for (const it of this.items) {
       const d = cam.distanceTo(it.pos);
       let show = true;
-      if (it.kind === 'minor') show = camDist < 4500;
-      else if (it.kind === 'area') show = camDist < 16000 && d < 30000;
+      if (it.kind === 'minor') show = camDist < (small ? 2500 : 4500);
+      else if (it.kind === 'area') show = camDist < (small ? 12000 : 16000) && d < 30000;
       else if (it.kind === 'major') show = d < 45000;
       if (show) {
         const steps = 40;
@@ -167,7 +172,32 @@ export class LandmarkLayer {
           if (g.height(x, z) > y + 2) { show = false; break; }
         }
       }
-      it.div.classList.toggle('hidden', !show);
+      if (show) {
+        v.copy(it.pos).project(camera);
+        if (v.z > 1 || Math.abs(v.x) > 1.2 || Math.abs(v.y) > 1.2) show = false;
+        else {
+          const rank = it.div.classList.contains('active') ? 0 : it.lm?.top ? 1 : { major: 1.5, peak: 2, minor: 3, area: 4 }[it.kind];
+          cand.push({ it, rank, d, sx: (v.x + 1) / 2 * w, sy: (1 - v.y) / 2 * h });
+        }
+      }
+      if (!show) it.div.classList.add('hidden');
+    }
+    cand.sort((a, b) => a.rank - b.rank || a.d - b.d);
+    for (const c of cand) {
+      const el = c.it.div;
+      // Measure the landmark card (not its stem) or the whole label; cache once laid out.
+      const card = c.it.kind === 'major' || c.it.kind === 'minor' ? el.firstElementChild : el;
+      if (!c.it.bw) { const r = card.getBoundingClientRect(); if (r.width) { c.it.bw = r.width; c.it.bh = r.height; c.it.stem = el.offsetHeight - r.height; } }
+      const bw = c.it.bw || 80, bh = c.it.bh || 20;
+      // Landmarks and peaks hang above their anchor; area names are centred on it.
+      const bottom = c.it.kind === 'area' ? c.sy + bh / 2 : c.sy - (card === el ? 0 : c.it.stem || 0);
+      const box = { x0: c.sx - bw / 2 - 3, x1: c.sx + bw / 2 + 3, y1: bottom + 3 };
+      box.y0 = box.y1 - bh - 6;
+      const clash = c.rank > 0 && placed.some((p) => box.x0 < p.x1 && box.x1 > p.x0 && box.y0 < p.y1 && box.y1 > p.y0);
+      const offscreen = box.x0 < 0 || box.x1 > w;
+      const hide = clash || (offscreen && c.rank > 0);
+      el.classList.toggle('hidden', hide);
+      if (!hide) placed.push(box);
     }
   }
 
