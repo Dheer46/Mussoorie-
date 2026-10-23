@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mussoorie Digital Twin</title>
+  <meta name="description" content="Interactive, data-driven 3D model of Mussoorie, Uttarakhand: Copernicus elevation, Sentinel-2 imagery and OpenStreetMap buildings and roads.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath d=%22M0 15 5 6l3 4 3-7 5 12z%22 fill=%22%23f2a541%22/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+  </script>
+</head>
+<body>
+  <div id="view"></div>
+
+  <header id="title">
+    <button id="sidebar-toggle" aria-label="Toggle landmarks">☰</button>
+    <div>
+      <h1>Mussoorie <span>Digital Twin</span></h1>
+      <p>Queen of the Hills · Uttarakhand · 30.46° N 78.07° E</p>
+    </div>
+  </header>
+
+  <aside id="sidebar">
+    <input id="lm-search" type="search" placeholder="Search landmarks…" autocomplete="off">
+    <ul id="lm-list"></ul>
+    <div class="layers">
+      <h3>Layers</h3>
+      <label><input type="checkbox" id="t-hd" checked> HD imagery <small>(streamed)</small></label>
+      <label><input type="checkbox" id="t-buildings" checked> Buildings</label>
+      <label><input type="checkbox" id="t-roads" checked> Roads</label>
+      <label><input type="checkbox" id="t-forest" checked> Forest</label>
+      <label><input type="checkbox" id="t-water" checked> Water</label>
+      <label><input type="checkbox" id="t-labels" checked> Labels</label>
+      <label class="row">Clouds <input type="range" id="clouds" min="0" max="1" step="0.01" value="0.35"></label>
+      <label class="row">Quality
+        <select id="quality"><option value="low">Low</option><option value="high">High</option><option value="ultra">Ultra</option></select>
+      </label>
+    </div>
+    <p id="stats"></p>
+  </aside>
+
+  <section id="info" aria-live="polite">
+    <button id="info-close" aria-label="Close">×</button>
+    <div id="info-cat"></div>
+    <h2 id="info-name"></h2>
+    <dl>
+      <dt>Elevation</dt><dd id="info-elev"></dd>
+      <dt>Position</dt><dd id="info-coord"></dd>
+    </dl>
+    <p id="info-text"></p>
+    <p class="src">Elevation: Copernicus GLO-30 DSM · Position: OpenStreetMap / Overture Maps</p>
+  </section>
+
+  <div id="timebar">
+    <button id="time-play" title="Time-lapse">▶</button>
+    <input type="range" id="time" min="0" max="1439" step="1" value="630" aria-label="Time of day">
+    <span id="time-label"></span>
+    <input type="date" id="date" aria-label="Date">
+    <button id="time-now" title="Current time in Mussoorie">Now</button>
+    <span id="sun-label"></span>
+  </div>
+
+  <div id="nav">
+    <button id="compass" title="Face north"><span id="compass-needle">▲<b>N</b></span></button>
+    <button id="reset" title="Reset view">⌂</button>
+  </div>
+  <div id="scale"><div id="scale-bar"></div><span id="scale-label"></span></div>
+  <div id="readout">—</div>
+  <div id="toast"></div>
+  <footer id="credits">
+    Terrain © Copernicus DEM GLO-30/90 (ESA, Airbus) · Imagery: Copernicus Sentinel-2 (ESA), HD: Esri World Imagery (Esri, Maxar, Earthstar Geographics) ·
+    Buildings &amp; roads © OpenStreetMap contributors via Overture Maps (ODbL)
+  </footer>
+
+  <div id="loader">
+    <div class="ld-inner">
+      <h1>Mussoorie <span>Digital Twin</span></h1>
+      <div class="ld-track"><div id="load-bar"></div></div>
+      <p id="load-msg">Starting…</p>
+    </div>
+  </div>
+
+  <script>
+    // Surface module-loading failures (e.g. opened from file://) instead of a frozen loader.
+    addEventListener('error', (e) => {
+      const m = document.getElementById('load-msg');
+      if (m && !document.getElementById('loader').classList.contains('done')) {
+        m.textContent = 'Failed to start: ' + (e.message || 'a script could not be loaded') + '. Serve the "public" folder over HTTP (see README).';
+        document.getElementById('loader').classList.add('error');
+      }
+    }, true);
+  </script>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
