@@ -26,8 +26,14 @@ const progress = (pct, msg) => {
 
 async function fetchBuf(name) {
   const r = await fetch(DATA + name);
-  if (!r.ok) throw new Error(`${name}: HTTP ${r.status}`);
-  return r.arrayBuffer();
+  if (r.ok) return r.arrayBuffer();
+  // Hosts that won't serve raw binary get a base64 copy (<name>.txt).
+  const t = await fetch(DATA + name + '.txt');
+  if (!t.ok) throw new Error(`${name}: HTTP ${r.status}`);
+  const bin = atob((await t.text()).trim());
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out.buffer;
 }
 
 async function loadImage(name) {
@@ -60,7 +66,8 @@ async function main() {
   ]);
 
   // ---------------------------------------------------------------- renderer
-  let quality = localStorage.getItem('quality') || 'high';
+  let quality = 'high';
+  try { quality = localStorage.getItem('quality') || 'high'; } catch { /* storage unavailable */ }
   if (!QUALITY[quality]) quality = 'high';
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, QUALITY[quality].dpr));
@@ -256,7 +263,8 @@ async function main() {
   bindToggle('#t-hd', (v) => hd.setEnabled(v));
   $('#quality').value = quality;
   $('#quality').onchange = (e) => {
-    quality = e.target.value; localStorage.setItem('quality', quality);
+    quality = e.target.value;
+    try { localStorage.setItem('quality', quality); } catch { /* storage unavailable */ }
     const q = QUALITY[quality];
     renderer.setPixelRatio(Math.min(devicePixelRatio, q.dpr));
     atmos.sun.shadow.mapSize.setScalar(q.shadow);
